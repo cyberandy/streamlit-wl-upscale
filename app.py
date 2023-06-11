@@ -67,17 +67,50 @@ def main():
     image_uri = st.text_input("Image URL")
 
     if access_token and upscale_model_name and image_uri and st.button("Upscale"):
-        try:
-            st.info("Upscaling in progress...")
-            client = Client(token=access_token)
-            upscale_model = client.get_model(upscale_model_name)
-            result = upscale_image(image_uri, upscale_model, f"{width}:{height}")
+        st.info("Upscaling in progress...")
+        client = Client(token=access_token)
+        upscale_model = client.get_model(upscale_model_name)
+        result = upscale_image(image_uri, upscale_model, f"{width}:{height}")
 
-            # ... (rest of the code inside the if block) ...
+        original_image = Image.open(BytesIO(requests.get(image_uri).content))
+        original_weight = get_file_size(BytesIO(requests.get(image_uri).content))
+        original_width, original_height = get_image_size(original_image)
 
-        except ConnectionError:
-            st.error(
-                "Connection error. Please check your internet connection and try again."
+        for r in result:
+            upscaled_image_bytes = r.blob
+            upscaled_image = Image.open(BytesIO(upscaled_image_bytes))
+
+            # Preserve aspect ratio while resizing
+            upscaled_image.thumbnail((width, height), Image.ANTIALIAS)
+
+            # Save the upscaled image in memory in JPEG format for calculating the compressed weight
+            image_bytes = BytesIO()
+            upscaled_image.save(image_bytes, format="JPEG", quality=80)
+            upscaled_weight = get_file_size(image_bytes)
+
+            upscaled_width, upscaled_height = get_image_size(upscaled_image)
+
+            # Comparing Original Image and Upscaled Image
+            image_comparison(
+                original_image,
+                upscaled_image,
+                label1="Original",
+                label2="Upscaled",
+            )
+
+            st.write("Original Image Weight: {:.2f} KB".format(original_weight))
+            st.write(
+                "Upscaled (compressed) Image Weight: {:.2f} KB".format(upscaled_weight)
+            )
+            st.write(
+                "Original Image Size: {} x {}".format(original_width, original_height)
+            )
+            st.write(
+                "Upscaled Image Size: {} x {}".format(upscaled_width, upscaled_height)
+            )
+
+            st.download_button(
+                "Download", image_bytes.getvalue(), file_name="upscaled_image.jpg"
             )
 
     if (
@@ -86,21 +119,12 @@ def main():
         and image_uri
         and st.button("Generate Caption")
     ):
-        try:
-            st.info("Generating caption...")
-            client = Client(token=access_token)
-            caption_model = client.get_model(caption_model_name)
-            image_content = requests.get(image_uri).content
-            caption = generate_caption(caption_model, image_content)
-            st.write("Caption: {}".format(caption))
-
-        except ConnectionError:
-            st.error(
-                "Connection error. Please check your internet connection and try again."
-            )
-
-
-## Run App ##
+        st.info("Generating caption...")
+        client = Client(token=access_token)
+        caption_model = client.get_model(caption_model_name)
+        image_content = requests.get(image_uri).content
+        caption = generate_caption(caption_model, image_content)
+        st.write("Caption: {}".format(caption))
 
 
 ## Run App ##
