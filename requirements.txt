@@ -3,3 +3,5 @@ requests
 docarray
 inference_client
 Pillow
+torch
+streamlit_image_comparison
