@@ -1,11 +1,8 @@
 import streamlit as st
 import requests
 from inference_client import Client
-from jina import DocumentArray, Document
 from PIL import Image
 from io import BytesIO
-import os
-import numpy as np
 from streamlit_image_comparison import image_comparison
 
 
@@ -18,9 +15,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
     menu_items={
         "Get help": "https://wordlift.io/book-a-demo/",
-        "About": "This is an *demo* created by @cyberandy and the WordLift team! Lern more: https://wordlift.io/blog/en/image-seo-using-ai/",
+        "About": "This is an *demo* created by @cyberandy and the WordLift team! Learn more: https://wordlift.io/blog/en/image-seo-using-ai/",
     },
 )
+
 
 ## Helper Functions ##
 
@@ -32,15 +30,6 @@ def get_file_size(image_bytes):
 def get_image_size(image):
     width, height = image.size
     return width, height
-
-
-def upscale_image(uri, model, scale):
-    doc = Document(
-        uri=uri, tags={"image_format": "png", "output_path": "upscaled_image.jpg"}
-    )
-    docs = DocumentArray([doc])
-    result = model.upscale(docs=docs, scale=scale)
-    return result
 
 
 def generate_caption(client, image):
@@ -59,7 +48,7 @@ def main():
     caption_model_name = st.sidebar.text_input(
         "Caption Model Name", value="Salesforce/blip2-flan-t5-xl"
     )
-    width = st.sidebar.number_input("Image Width", value=1200)
+    width = st.sidebar.number_input("Image Width", value=500)
     height = st.sidebar.number_input("Image Height", value=-1)
 
     st.title("Image Upscaling and Captioning 🖼️")
@@ -69,49 +58,41 @@ def main():
     if access_token and upscale_model_name and image_uri and st.button("Upscale"):
         st.info("Upscaling in progress...")
         client = Client(token=access_token)
-        upscale_model = client.get_model(upscale_model_name)
-        result = upscale_image(image_uri, upscale_model, f"{width}:{height}")
+        model = client.get_model(upscale_model_name)
+        image = requests.get(image_uri).content
 
-        original_image = Image.open(BytesIO(requests.get(image_uri).content))
-        original_weight = get_file_size(BytesIO(requests.get(image_uri).content))
+        # Using updated upscale function that handles compression
+        result = model.upscale(
+            image=image,
+            scale=f"{width}:{height}",
+            output_path="upscaled_image.jpeg",
+            quality=80,
+        )
+        upscaled_image = Image.open(BytesIO(result))
+
+        original_image = Image.open(BytesIO(image))
+        original_weight = get_file_size(BytesIO(image))
         original_width, original_height = get_image_size(original_image)
 
-        for r in result:
-            upscaled_image_bytes = r.blob
-            upscaled_image = Image.open(BytesIO(upscaled_image_bytes))
+        upscaled_weight = get_file_size(BytesIO(result))
+        upscaled_width, upscaled_height = get_image_size(upscaled_image)
 
-            # Preserve aspect ratio while resizing
-            upscaled_image.thumbnail((width, height), Image.ANTIALIAS)
+        # Comparing Original Image and Upscaled Image
+        image_comparison(
+            original_image,
+            upscaled_image,
+            label1="Original",
+            label2="Upscaled",
+        )
 
-            # Save the upscaled image in memory in JPEG format for calculating the compressed weight
-            image_bytes = BytesIO()
-            upscaled_image.save(image_bytes, format="JPEG", quality=80)
-            upscaled_weight = get_file_size(image_bytes)
+        st.write("Original Image Weight: {:.2f} KB".format(original_weight))
+        st.write(
+            "Upscaled (compressed) Image Weight: {:.2f} KB".format(upscaled_weight)
+        )
+        st.write("Original Image Size: {} x {}".format(original_width, original_height))
+        st.write("Upscaled Image Size: {} x {}".format(upscaled_width, upscaled_height))
 
-            upscaled_width, upscaled_height = get_image_size(upscaled_image)
-
-            # Comparing Original Image and Upscaled Image
-            image_comparison(
-                original_image,
-                upscaled_image,
-                label1="Original",
-                label2="Upscaled",
-            )
-
-            st.write("Original Image Weight: {:.2f} KB".format(original_weight))
-            st.write(
-                "Upscaled (compressed) Image Weight: {:.2f} KB".format(upscaled_weight)
-            )
-            st.write(
-                "Original Image Size: {} x {}".format(original_width, original_height)
-            )
-            st.write(
-                "Upscaled Image Size: {} x {}".format(upscaled_width, upscaled_height)
-            )
-
-            st.download_button(
-                "Download", image_bytes.getvalue(), file_name="upscaled_image.jpg"
-            )
+        st.download_button("Download", result, file_name="upscaled_image.jpeg")
 
     if (
         access_token
